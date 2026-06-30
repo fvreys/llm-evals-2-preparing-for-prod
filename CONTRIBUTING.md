@@ -1,12 +1,5 @@
 # **Collaborating on the Project**
 
-## **Table of Contents**
-
-- Prerequisites
-- [Basic knowledge of Git (clone, commit, push, pull)](#basic-knowledge-of-git-clone-commit-push-pull)
-- [GitHub Repository Deliverable](#deliverables)
-- [Best Practices](#best-practices)
-
 ## **Prerequisites**
 
 - A GitHub account.
@@ -14,14 +7,12 @@
 
 ## **Basic knowledge of Git (clone, commit, push, pull).**
 
-1. Create or fork this repository in your account:
-- Create a new GitHub repository (e.g., deploying-llm-applications).
-- Add collaborators in “Settings > Collaborators" (if using a private repo) so that we have access to it.
+1. Fork this repository to your own GitHub account.
 2. Clone the forked repo to your local machine:
 
 ```bash
-git clone https://github.com/username/deploying-llm-applications.git
-cd deploying-llm-applications
+git clone <>
+cd llm-evals-2-preparing-for-prod
 ```
 
 3. Create a new branch for your work — always create a new branch to work on a specific feature or task. Use descriptive prefixes for your branch names like `feature/`,  `bugfix/`,  or `refactor/`:
@@ -55,7 +46,7 @@ git commit -m "Add FastAPI /ask endpoint"
 git push origin feature/add-fastapi-endpoint
 ```
 
-7. Open a pull request (PR). This is a request to merge your changes into the main branch.
+7. Open a pull request (PR) against the main branch of the original repository. This is a request to merge your changes into the main branch.
 - You can open a PR from the IDE (via [GitHub plugin](https://plugins.jetbrains.com/plugin/13115-github)) or go to GitHub and:
     - Click Compare & pull request.
     - Write a clear title and description:
