@@ -6,7 +6,7 @@ import uuid
 
 import dotenv
 from langchain_community.docstore.document import Document
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -217,9 +217,6 @@ def main():
         context_lf_prompt.get_langchain_prompt ()[0],
         MessagesPlaceholder (variable_name="conversation"),
     ])
-    # OR ? shorter version:
-    #   Using langchain, you can obtain a MessagesPlaceholder object for unresolved placeholders
-    # context_prompt = ChatPromptTemplate.from_template (context_lf_prompt.get_langchain_prompt ())
     context_prompt.metadata = {"langfuse_prompt": context_lf_prompt}
 
     review_lf_prompt = langfuse.get_prompt ("review_system_prompt")
@@ -230,10 +227,9 @@ def main():
     review_prompt.metadata = {"langfuse_prompt": review_lf_prompt}
 
     goodbye_lf_prompt = langfuse.get_prompt ("goodbye_system_prompt")
-    goodbye_prompt = ChatPromptTemplate.from_messages ([
-        goodbye_lf_prompt.get_langchain_prompt()[0]
-        # MessagesPlaceholder (variable_name="conversation"),
-    ])
+    goodbye_prompt = PromptTemplate.from_template (
+        goodbye_lf_prompt.get_langchain_prompt()[0][1]
+    )
     goodbye_prompt.metadata = {"langfuse_prompt": goodbye_lf_prompt}
 
     context_chain = context_prompt | llm_with_tools | generate_context
@@ -270,7 +266,7 @@ def main():
                         # Set the output on the parent span
                         span.update(output={"response": goodbye_message.content})
 
-                print(f"System: {goodbye_message.content}")
+                # print(f"System: {goodbye_message.content}")
 
                 # Collect user feedback about the entire conversation
                 feedback = input("\nWas this conversation helpful? (Yes/No): ").strip()
