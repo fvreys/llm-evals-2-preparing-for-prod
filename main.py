@@ -16,9 +16,39 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langfuse import observe, propagate_attributes, get_client
 from langfuse.langchain import CallbackHandler
+from nemoguardrails import RailsConfig
+from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
+
 
 # Load environment variables from .env file
-dotenv.load_dotenv()
+dotenv.load_dotenv(override=True)
+
+def configure_tiny_llm_for_openai_compatible_clients() -> None:
+    """
+    Tiny LLM provides an OpenAI-compatible API.
+
+    LangChain can receive TINY_API_KEY and TINY_BASE_URL directly, but NeMo Guardrails'
+    `openai` engine expects OpenAI-compatible environment variables. We map the Tiny
+    settings into those variables before RailsConfig/RunnableRails are initialized.
+    """
+    tiny_api_key = os.getenv("TINY_API_KEY")
+    tiny_base_url = os.getenv("TINY_BASE_URL")
+
+    if not tiny_api_key:
+        raise RuntimeError(
+            "Missing TINY_API_KEY. Please set TINY_API_KEY in your .env file."
+        )
+    if not tiny_base_url:
+        raise RuntimeError(
+            "Missing TINY_BASE_URL. Please set TINY_BASE_URL in your .env file."
+        )
+
+    os.environ["OPENAI_API_KEY"] = tiny_api_key
+    os.environ["OPENAI_BASE_URL"] = tiny_base_url
+    os.environ["OPENAI_API_BASE"] = tiny_base_url
+
+configure_tiny_llm_for_openai_compatible_clients()
+
 
 # Generate unique session_id and user_id once
 session_id = f"session-{uuid.uuid4().hex[:8]}"
@@ -33,21 +63,20 @@ history = RedisChatMessageHistory(session_id = session_id, redis_url=REDIS_URL)
 
 # Initialize the LLM with OpenAI API credentials (substitute for other models)
 llm = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL"),
+    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     base_url=os.getenv("TINY_BASE_URL"),
     api_key=os.getenv("TINY_API_KEY")
 )
 
 # Initialize the embedding model with OpenAI API credentials
 embeddings_model = OpenAIEmbeddings(
-    model=os.getenv("OPENAI_EMBEDDINGS_MODEL"),
+    model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-ada-002"),
     base_url=os.getenv ("TINY_BASE_URL"),
     api_key=os.getenv ("TINY_API_KEY"),
     show_progress_bar=True
 )
 
 # Initialize Redis history with TTL
-# conversation = []
 redis_history = RedisChatMessageHistory(
     session_id=session_id,
     redis_url=REDIS_URL,
@@ -60,6 +89,15 @@ conversation = list(redis_history.messages)
 # Initialize Langfuse client
 langfuse = get_client()
 
+# Load guardrails configuration
+config = RailsConfig.from_path("config/")
+# Create guardrails instance for input validation only
+input_rails = RunnableRails(config, input_key="user_input")
+
+# print("Guardrails TINY_BASE_URL:", os.getenv("TINY_BASE_URL"))
+# print("Guardrails OPENAI_BASE_URL:", os.getenv("OPENAI_BASE_URL"))
+# print("Guardrails OPENAI_API_BASE:", os.getenv("OPENAI_API_BASE"))
+# print("Has OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
 
 # ---------------------------
 # Load JSON Data and Build Qdrant Vector Store
@@ -113,6 +151,7 @@ def embed_documents(json_path: str) -> QdrantVectorStore | list:
         qdrant_client = QdrantClient("http://localhost:6333")
 
         collection_exists = qdrant_client.collection_exists(collection_name=collection_name)
+        # no need to create a vector store every time
         if not collection_exists:
             qdrant_client.create_collection(
                 collection_name=collection_name,
@@ -122,24 +161,27 @@ def embed_documents(json_path: str) -> QdrantVectorStore | list:
                 ),
             )
 
-            qdrant_store = QdrantVectorStore(
-                client=qdrant_client,
-                collection_name=collection_name,
-                embedding=embeddings_model
-            )
+        qdrant_store = QdrantVectorStore(
+            client=qdrant_client,
+            collection_name=collection_name,
+            embedding=embeddings_model
+        )
 
+        # Only embed documents if the collection is empty
+        point_count = 0
+        if qdrant_client.collection_exists(collection_name=collection_name):
+            collection_info = qdrant_client.get_collection(collection_name=collection_name)
+            point_count = collection_info.points_count or 0
+
+        if point_count == 0:
+            print("Qdrant collection is empty. Creating embeddings and inserting documents...")
             qdrant_store.add_documents(documents=documents)
-
-            return qdrant_store
-
-        # no need to create a vector store every time
         else:
-            qdrant_store = QdrantVectorStore.from_existing_collection(
-                embedding=embeddings_model,
-                collection_name=collection_name,
-            )
+            print(f"Using existing Qdrant collection with {point_count} points.")
 
-            return qdrant_store
+
+        return qdrant_store
+
 
     except Exception as e:
         print(f"Error initializing the vector store: {e}")
@@ -312,6 +354,21 @@ def main():
             # Add user input to in-memory conversation
             user_message = HumanMessage(user_input)
             conversation.append (user_message)
+
+            # Validate input with guardrails BEFORE invoking chains
+            validation_result = input_rails.invoke (
+                {"user_input": user_input},
+                config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
+            )
+
+            # Check if input rail was triggered using metadata (not string matching)
+            rail_triggered = (isinstance (validation_result, AIMessage)
+                              and validation_result.response_metadata.get ("rails_triggered", False))
+
+            if rail_triggered:
+                # Rail triggered - skip further processing
+                print (f"System: {validation_result.content}")
+                continue  # Skip saving to Redis and proceed to next input
 
             # Create a parent span for this user query to group all chain invocations
             with langfuse.start_as_current_observation(
