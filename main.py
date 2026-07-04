@@ -96,7 +96,6 @@ input_rails = RunnableRails(config, input_key="user_input")
 
 # print("Guardrails TINY_BASE_URL:", os.getenv("TINY_BASE_URL"))
 # print("Guardrails OPENAI_BASE_URL:", os.getenv("OPENAI_BASE_URL"))
-# print("Guardrails OPENAI_API_BASE:", os.getenv("OPENAI_API_BASE"))
 # print("Has OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
 
 # ---------------------------
