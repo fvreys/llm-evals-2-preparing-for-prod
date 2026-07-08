@@ -5,7 +5,7 @@ import sys
 import uuid
 
 import dotenv
-from langchain_community.docstore.document import Document
+from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, trim_messages
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_core.tools import tool
@@ -16,85 +16,81 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langfuse import observe, propagate_attributes, get_client
 from langfuse.langchain import CallbackHandler
-from nemoguardrails import RailsConfig
-from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
+# from nemoguardrails import RailsConfig
+# from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
 
 
 # Load environment variables from .env file
 dotenv.load_dotenv(override=True)
 
-def configure_tiny_llm_for_openai_compatible_clients() -> None:
+def configure_lite_llm_for_openai_compatible_clients() -> None:
     """
-    Tiny LLM provides an OpenAI-compatible API.
+    Lite LLM provides an OpenAI-compatible API.
 
-    LangChain can receive TINY_API_KEY and TINY_BASE_URL directly, but NeMo Guardrails'
+    LangChain can receive LITELLM_API_KEY and LITELLM_BASE_URL directly, but NeMo Guardrails'
     `openai` engine expects OpenAI-compatible environment variables. We map the Tiny
     settings into those variables before RailsConfig/RunnableRails are initialized.
     """
-    tiny_api_key = os.getenv("TINY_API_KEY")
-    tiny_base_url = os.getenv("TINY_BASE_URL")
+    litellm_api_key = os.getenv("LITELLM_API_KEY")
+    litellm_base_url = os.getenv("LITELLM_BASE_URL")
 
-    if not tiny_api_key:
+    if not litellm_api_key:
         raise RuntimeError(
-            "Missing TINY_API_KEY. Please set TINY_API_KEY in your .env file."
+            "Missing LITELLM_API_KEY. Please set LITELLM_API_KEY in your .env file."
         )
-    if not tiny_base_url:
+    if not litellm_base_url:
         raise RuntimeError(
-            "Missing TINY_BASE_URL. Please set TINY_BASE_URL in your .env file."
+            "Missing LITELLM_BASE_URL. Please set LITELLM_BASE_URL in your .env file."
         )
 
-    os.environ["OPENAI_API_KEY"] = tiny_api_key
-    os.environ["OPENAI_BASE_URL"] = tiny_base_url
-    os.environ["OPENAI_API_BASE"] = tiny_base_url
+    os.environ["OPENAI_API_KEY"] = litellm_api_key
+    os.environ["OPENAI_BASE_URL"] = litellm_base_url
+    os.environ["OPENAI_API_BASE"] = litellm_base_url
 
-configure_tiny_llm_for_openai_compatible_clients()
+configure_lite_llm_for_openai_compatible_clients()
 
 
-# Generate unique session_id and user_id once
+# Generate unique session_id and unique user_id once
 session_id = f"session-{uuid.uuid4().hex[:8]}"
 users = ["James", "George", "Mike", "Sherlock"]
 user_id = users[uuid.uuid4().int % len(users)]
 
-
-# Initialize Redis chat history
 REDIS_URL = "redis://localhost:6380/0"
-history = RedisChatMessageHistory(session_id = session_id, redis_url=REDIS_URL)
-
 
 # Initialize the LLM with OpenAI API credentials (substitute for other models)
 llm = ChatOpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    base_url=os.getenv("TINY_BASE_URL"),
-    api_key=os.getenv("TINY_API_KEY")
+    base_url=os.getenv("LITELLM_BASE_URL"),
+    api_key=os.getenv("LITELLM_API_KEY")
 )
 
 # Initialize the embedding model with OpenAI API credentials
 embeddings_model = OpenAIEmbeddings(
     model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-ada-002"),
-    base_url=os.getenv ("TINY_BASE_URL"),
-    api_key=os.getenv ("TINY_API_KEY"),
+    base_url=os.getenv ("LITELLM_BASE_URL"),
+    api_key=os.getenv ("LITELLM_API_KEY"),
     show_progress_bar=True
 )
 
-# Initialize Redis history with TTL
-redis_history = RedisChatMessageHistory(
-    session_id=session_id,
-    redis_url=REDIS_URL,
-    ttl=3600  # 1 hour
-)
-
-# Load conversation history from Redis
-conversation = list(redis_history.messages)
+# # Initialize Redis history with TTL
+# redis_history = RedisChatMessageHistory(
+#     session_id=session_id,
+#     redis_url=REDIS_URL,
+#     ttl=3600    # 1 hour
+# )
+#
+# # Load conversation history from Redis
+# conversation = list(redis_history.messages)
 
 # Initialize Langfuse client
 langfuse = get_client()
 
-# Load guardrails configuration
-config = RailsConfig.from_path("config/")
-# Create guardrails instance for input validation only
-input_rails = RunnableRails(config, input_key="user_input")
+# # Load guardrails configuration
+# config = RailsConfig.from_path("config/")
+# # Create guardrails instance for input validation only
+# input_rails = RunnableRails(config, input_key="user_input")
 
-# print("Guardrails TINY_BASE_URL:", os.getenv("TINY_BASE_URL"))
+# print("Guardrails LITELLM_BASE_URL:", os.getenv("LITELLM_BASE_URL"))
 # print("Guardrails OPENAI_BASE_URL:", os.getenv("OPENAI_BASE_URL"))
 # print("Guardrails OPENAI_API_BASE:", os.getenv("OPENAI_API_BASE"))
 # print("Has OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
@@ -177,7 +173,8 @@ def embed_documents(json_path: str) -> QdrantVectorStore | list:
             print("Qdrant collection is empty. Creating embeddings and inserting documents...")
             qdrant_store.add_documents(documents=documents)
         else:
-            print(f"Using existing Qdrant collection with {point_count} points.")
+            pass
+            # print(f"Using existing Qdrant collection with {point_count} points.")
 
 
         return qdrant_store
@@ -222,7 +219,7 @@ def smartphone_info_tool(model: str) -> str:
 # Tool Call Handling and Response Generation
 # ---------------------------
 @observe(name="generate_context")
-def generate_context(ai_message: AIMessage, conversation: list) -> None:
+def generate_context(ai_message: AIMessage, convers: list, configuration: dict | None = None) -> None:
     """
     Process tool calls from the language model and append the AI message and
     each tool's response as ToolMessage objects to the conversation history.
@@ -230,13 +227,14 @@ def generate_context(ai_message: AIMessage, conversation: list) -> None:
     :param
         ai_message (AIMessage): The language model's output message containing tool_calls.
         conversation (list): The conversation history to which the AI message and tool responses will be appended.
+        configuration (dict | None): Optional config for function. It supports "callbacks" key for Langfuse tracing.
     """
     # construct the conversation history with the AI message containing tool calls
-    conversation.append(ai_message)
+    convers.append(ai_message)
 
     # Check if the AI message has any tool calls
     if not hasattr(ai_message, "tool_calls") or not ai_message.tool_calls:
-        conversation.append(
+        convers.append(
             AIMessage(
                 content="No tool calls found. Please ensure the model is configured to use tools."
             )
@@ -247,12 +245,12 @@ def generate_context(ai_message: AIMessage, conversation: list) -> None:
         # a message with tool calls is expected to be followed by tool responses
         for tool_call in ai_message.tool_calls:
             if tool_call["name"] == "SmartphoneInfo":
-                tool_output = smartphone_info_tool.invoke(tool_call)
-                conversation.append(tool_output)
+                tool_output = smartphone_info_tool.invoke(tool_call, config=configuration)
+                convers.append(tool_output)
 
     except Exception as e:
         print(f"An error occurred while processing tool calls: {e}")
-        conversation.append(
+        convers.append(
             AIMessage(
                 content=f"An error occurred while processing tool calls: {e}"
             )
@@ -305,12 +303,13 @@ def main():
     # Initialize the Langfuse handler once for the entire conversation
     langfuse_handler = CallbackHandler()
 
+    # Initialize Redis chat history
+    redis_history = RedisChatMessageHistory (session_id=session_id, redis_url=REDIS_URL, ttl=3600)
+
     try:
         print("Welcome to the Smartphone Assistant! I can help you with smartphone features and comparisons.")
         while True:
             user_input = input("User: ").strip()
-            # Load conversation history from Redis
-            conversation = list(redis_history.messages)
             if user_input.lower() in ["exit", "quit", "bye", "end"]:
                 # Create a parent span for the goodbye message
                 with langfuse.start_as_current_observation(
@@ -333,7 +332,7 @@ def main():
                         # Set the output on the parent span
                         span.update(output={"response": goodbye_message.content})
 
-                # print(f"System: {goodbye_message.content}")
+                print(f"System: {goodbye_message.content}")
 
                 # Collect user feedback about the entire conversation
                 feedback = input("\nWas this conversation helpful? (Yes/No): ").strip()
@@ -351,24 +350,27 @@ def main():
                 print("\nThank you for your feedback!")
                 break
 
+            # Load conversation history from Redis
+            conversation = list(redis_history.messages)
+
             # Add user input to in-memory conversation
             user_message = HumanMessage(user_input)
             conversation.append (user_message)
 
-            # Validate input with guardrails BEFORE invoking chains
-            validation_result = input_rails.invoke (
-                {"user_input": user_input},
-                config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
-            )
-
-            # Check if input rail was triggered using metadata (not string matching)
-            rail_triggered = (isinstance (validation_result, AIMessage)
-                              and validation_result.response_metadata.get ("rails_triggered", False))
-
-            if rail_triggered:
-                # Rail triggered - skip further processing
-                print (f"System: {validation_result.content}")
-                continue  # Skip saving to Redis and proceed to next input
+            # # Validate input with guardrails BEFORE invoking chains
+            # validation_result = input_rails.invoke (
+            #     {"user_input": user_input},
+            #     config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
+            # )
+            #
+            # # Check if input rail was triggered using metadata (not string matching)
+            # rail_triggered = (isinstance (validation_result, AIMessage)
+            #                   and validation_result.response_metadata.get ("rails_triggered", False))
+            #
+            # if rail_triggered:
+            #     # Rail triggered - skip further processing
+            #     print (f"System: {validation_result.content}")
+            #     continue  # Skip saving to Redis and proceed to next input
 
             # Create a parent span for this user query to group all chain invocations
             with langfuse.start_as_current_observation(
@@ -389,7 +391,9 @@ def main():
                             "callbacks": [langfuse_handler]
                         }
                     )
-                    generate_context(ai_message, conversation)
+
+                    # Process tool calls and add results to in-memory conversation
+                    generate_context(ai_message, conversation, configuration={"callbacks": [langfuse_handler]})
 
                     # Final response chain invocation
                     response = review_chain.invoke(
