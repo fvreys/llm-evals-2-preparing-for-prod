@@ -6,7 +6,7 @@ import uuid
 
 import dotenv
 from langchain_core.documents import Document
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, trim_messages
+from langchain_core.messages import HumanMessage, AIMessage, trim_messages
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -21,36 +21,9 @@ from langfuse.langchain import CallbackHandler
 
 
 # Load environment variables from .env file
-dotenv.load_dotenv(override=True)
+dotenv.load_dotenv()
 
-# def configure_lite_llm_for_openai_compatible_clients() -> None:
-#     """
-#     Lite LLM provides an OpenAI-compatible API.
-#
-#     LangChain can receive LITELLM_API_KEY and LITELLM_BASE_URL directly, but NeMo Guardrails'
-#     `openai` engine expects OpenAI-compatible environment variables. We map the Tiny
-#     settings into those variables before RailsConfig/RunnableRails are initialized.
-#     """
-#     litellm_api_key = os.getenv("LITELLM_API_KEY")
-#     litellm_base_url = os.getenv("LITELLM_BASE_URL")
-#
-#     if not litellm_api_key:
-#         raise RuntimeError(
-#             "Missing LITELLM_API_KEY. Please set LITELLM_API_KEY in your .env file."
-#         )
-#     if not litellm_base_url:
-#         raise RuntimeError(
-#             "Missing LITELLM_BASE_URL. Please set LITELLM_BASE_URL in your .env file."
-#         )
-#
-#     os.environ["OPENAI_API_KEY"] = litellm_api_key
-#     os.environ["OPENAI_BASE_URL"] = litellm_base_url
-#     os.environ["OPENAI_API_BASE"] = litellm_base_url
-#
-# configure_lite_llm_for_openai_compatible_clients()
-
-
-# Generate unique session_id and unique user_id once
+# Generate unique session_id and user_id once
 session_id = f"session-{uuid.uuid4().hex[:8]}"
 users = ["James", "George", "Mike", "Sherlock"]
 user_id = users[uuid.uuid4().int % len(users)]
@@ -75,11 +48,6 @@ embeddings_model = OpenAIEmbeddings(
 
 # Initialize Langfuse client
 langfuse = get_client()
-
-# # Load guardrails configuration
-# config = RailsConfig.from_path("config/")
-# # Create guardrails instance for input validation only
-# input_rails = RunnableRails(config, input_key="user_input")
 
 
 # ---------------------------
@@ -159,13 +127,8 @@ def embed_documents(json_path: str) -> QdrantVectorStore | list:
         if point_count == 0:
             print("Qdrant collection is empty. Creating embeddings and inserting documents...")
             qdrant_store.add_documents(documents=documents)
-        else:
-            pass
-            # print(f"Using existing Qdrant collection with {point_count} points.")
-
 
         return qdrant_store
-
 
     except Exception as e:
         print(f"Error initializing the vector store: {e}")
@@ -405,9 +368,9 @@ def main():
             redis_history.add_message (user_message)
             redis_history.add_message (response)
             # Debug messages
-            print ("\nStored Redis messages:")
-            for index, message in enumerate (redis_history.messages, start=1):
-                print (f"{index}. {message.type}: {message.content}")
+            # print ("\nStored Redis messages:")
+            # for index, message in enumerate (redis_history.messages, start=1):
+            #     print (f"{index}. {message.type}: {message.content}")
             conversation.append(response)
 
     except Exception as e:
