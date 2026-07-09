@@ -1,0 +1,26 @@
+[project]
+name = "llm-evals-2-preparing-for-prod"
+version = "0.1.0"
+description = "Production-ready patterns for LLM applications: prompt management, chat history, guardrails, and API management"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core",
+    "langchain-openai==1.3.3",
+    "python-dotenv",
+    "langchain-community==0.4.2",
+    "langfuse==4.13.0",
+    "qdrant-client",
+    "langchain-qdrant",
+    "requests",
+    "langchain==1.3.11",
+    "langchain-redis>=0.2.5",
+    "redis>=7.4.0",
+    "nemoguardrails>=0.22.0",
+]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[dependency-groups]
+dev = []
