@@ -16,9 +16,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langfuse import observe, propagate_attributes, get_client
 from langfuse.langchain import CallbackHandler
-# from nemoguardrails import RailsConfig
-# from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
-
+from nemoguardrails import RailsConfig
+from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
 
 # Load environment variables from .env file
 dotenv.load_dotenv()
@@ -45,10 +44,13 @@ embeddings_model = OpenAIEmbeddings(
     show_progress_bar=True
 )
 
-
 # Initialize Langfuse client
 langfuse = get_client()
 
+# Load guardrails configuration
+config = RailsConfig.from_path("config/")
+# Create guardrails instance for input validation only
+input_rails = RunnableRails(config, input_key="user_input")
 
 # ---------------------------
 # Load JSON Data and Build Qdrant Vector Store
@@ -246,7 +248,7 @@ def main():
     trimmer = trim_messages (
         strategy="last",  # keep either the last or first messages
         token_counter=llm,  # use your LLM to count tokens or create a special function
-        max_tokens=500,  # the maximum number of tokens
+        max_tokens=700,  # the maximum number of tokens (500 -> 700)
         start_on="human",  # the first message type in the trimmed history
         end_on=("human", "tool"),  # the last message type in the trimmed history
         include_system=True,  # always include the system message
@@ -265,6 +267,8 @@ def main():
         print("Welcome to the Smartphone Assistant! I can help you with smartphone features and comparisons.")
         while True:
             user_input = input("User: ").strip()
+            # Load conversation history from Redis
+            conversation = list(redis_history.messages)
             if user_input.lower() in ["exit", "quit", "bye", "end"]:
                 # Create a parent span for the goodbye message
                 with langfuse.start_as_current_observation(
@@ -305,27 +309,27 @@ def main():
                 print("\nThank you for your feedback!")
                 break
 
-            # Load conversation history from Redis
-            conversation = list(redis_history.messages)
+            # Load conversation history from Redis - ALREADY INITIALIZED ?
+            # conversation = list(redis_history.messages)
 
             # Add user input to in-memory conversation
             user_message = HumanMessage(user_input)
             conversation.append (user_message)
 
-            # # Validate input with guardrails BEFORE invoking chains
-            # validation_result = input_rails.invoke (
-            #     {"user_input": user_input},
-            #     config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
-            # )
-            #
-            # # Check if input rail was triggered using metadata (not string matching)
-            # rail_triggered = (isinstance (validation_result, AIMessage)
-            #                   and validation_result.response_metadata.get ("rails_triggered", False))
-            #
-            # if rail_triggered:
-            #     # Rail triggered - skip further processing
-            #     print (f"System: {validation_result.content}")
-            #     continue  # Skip saving to Redis and proceed to next input
+            # Validate input with guardrails BEFORE invoking chains
+            validation_result = input_rails.invoke (
+                {"user_input": user_input},
+                config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
+            )
+
+            # Check if input rail was triggered using metadata (not string matching)
+            rail_triggered = (isinstance (validation_result, AIMessage)
+                              and validation_result.response_metadata.get ("rails_triggered", False))
+
+            if rail_triggered:
+                # Rail triggered - skip further processing
+                print (f"System: {validation_result.content}")
+                continue  # Skip saving to Redis and proceed to next input
 
             # Create a parent span for this user query to group all chain invocations
             with langfuse.start_as_current_observation(
@@ -368,9 +372,9 @@ def main():
             redis_history.add_message (user_message)
             redis_history.add_message (response)
             # Debug messages
-            # print ("\nStored Redis messages:")
-            # for index, message in enumerate (redis_history.messages, start=1):
-            #     print (f"{index}. {message.type}: {message.content}")
+            print ("\nStored Redis messages:")
+            for index, message in enumerate (redis_history.messages, start=1):
+                print (f"{index}. {message.type}: {message.content}")
             conversation.append(response)
 
     except Exception as e:
