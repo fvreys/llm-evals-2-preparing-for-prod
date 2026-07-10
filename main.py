@@ -18,6 +18,7 @@ from langfuse import observe, propagate_attributes, get_client
 from langfuse.langchain import CallbackHandler
 from nemoguardrails import RailsConfig
 from nemoguardrails.integrations.langchain.runnable_rails import RunnableRails
+from nemoguardrails.rails.llm.options import GenerationOptions
 
 # Load environment variables from .env file
 dotenv.load_dotenv()
@@ -47,7 +48,7 @@ embeddings_model = OpenAIEmbeddings(
 # Initialize Langfuse client
 langfuse = get_client()
 
-# Load guardrails configuration
+# Load guardrails configuration - Can also be in main
 config = RailsConfig.from_path("config/")
 # Create guardrails instance for input validation only
 input_rails = RunnableRails(config, input_key="user_input")
@@ -267,8 +268,6 @@ def main():
         print("Welcome to the Smartphone Assistant! I can help you with smartphone features and comparisons.")
         while True:
             user_input = input("User: ").strip()
-            # Load conversation history from Redis
-            conversation = list(redis_history.messages)
             if user_input.lower() in ["exit", "quit", "bye", "end"]:
                 # Create a parent span for the goodbye message
                 with langfuse.start_as_current_observation(
@@ -310,26 +309,11 @@ def main():
                 break
 
             # Load conversation history from Redis - ALREADY INITIALIZED ?
-            # conversation = list(redis_history.messages)
+            conversation = list(redis_history.messages)
 
-            # Add user input to in-memory conversation
+            # Add user input to in-memory conversation, for this turng
             user_message = HumanMessage(user_input)
             conversation.append (user_message)
-
-            # Validate input with guardrails BEFORE invoking chains
-            validation_result = input_rails.invoke (
-                {"user_input": user_input},
-                config={"run_name": "input-validation", "callbacks": [langfuse_handler]}
-            )
-
-            # Check if input rail was triggered using metadata (not string matching)
-            rail_triggered = (isinstance (validation_result, AIMessage)
-                              and validation_result.response_metadata.get ("rails_triggered", False))
-
-            if rail_triggered:
-                # Rail triggered - skip further processing
-                print (f"System: {validation_result.content}")
-                continue  # Skip saving to Redis and proceed to next input
 
             # Create a parent span for this user query to group all chain invocations
             with langfuse.start_as_current_observation(
@@ -342,6 +326,32 @@ def main():
                     session_id=session_id,
                     user_id=user_id
                 ):
+
+                    validation_result = input_rails.rails.generate(
+                        messages=[{"role": "user", "content": user_input}],
+                        options=GenerationOptions(
+                        rails=["input"],
+                        output_vars=["allowed", "triggered_input_rail", "bot_message"],
+                         ),
+                        )
+
+                    validation_context = validation_result.output_data or {}
+                    rail_triggered = validation_context.get("allowed") is False or bool(
+                            validation_context.get("triggered_input_rail")
+                        )
+
+                    if rail_triggered:
+                        # Rail triggered - skip further processing
+                        rail_response = validation_result.response[0]["content"]
+                        print("Rail triggered")
+                        span.update(
+                            output=rail_response,
+                            metadata={"triggered_input_rail": validation_context.get("triggered_input_rail")},
+                        )
+                        print(f"System: {rail_response}")
+                        continue  # Skip saving to Redis and go to next input
+
+
                     # Context chain invocation
                     ai_message = context_chain.invoke(
                         {"user_input": user_input, "conversation": conversation},
