@@ -181,7 +181,6 @@ Each task contains a collection of resources that will be helpful for you as you
 ## **Deliverables**
 
 Each task contains a set of deliverables that bring you close to achieving the final goal. The final product is a production-ready LLM application.
-
 ---
 
 ## **Contributing**
@@ -198,5 +197,10 @@ Fork → Clone → Branch → Implement → PR → Review
 - Push the branch to the forked repo.
 - Create a Pull Request from the fork back to the main repo.
 - We will review the PR and provide feedback through GitHub.
+
+## Tech stack
+- Langfuse
+- Langchain
+- Qdrant
 
 Next: [Prompt Management and Versioning](./tasks/task_1.md)
